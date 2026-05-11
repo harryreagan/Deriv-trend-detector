@@ -176,14 +176,14 @@ if barstate.islast
 // ==========================================
 // 1. High Accuracy "PRO" Signals
 if buy_signal
-    alert("🚀 PRO BUY | Price: " + str.tostring(close) + " | SL: " + str.tostring(sl_price) + " | TP: " + str.tostring(tp_price), alert.freq_once_per_bar)
+    alert("PRO BUY | Price: " + str.tostring(close) + " | SL: " + str.tostring(sl_price) + " | TP: " + str.tostring(tp_price), alert.freq_once_per_bar)
 
 if sell_signal
-    alert("🔥 PRO SELL | Price: " + str.tostring(close) + " | SL: " + str.tostring(sl_price) + " | TP: " + str.tostring(tp_price), alert.freq_once_per_bar)
+    alert("PRO SELL | Price: " + str.tostring(close) + " | SL: " + str.tostring(sl_price) + " | TP: " + str.tostring(tp_price), alert.freq_once_per_bar)
 
 // 2. Aggressive Crossover Alerts (Independent of RSI/Trend)
 if aggressive_alerts
     if macd_buy_trigger and not buy_signal
-        alert("⚡ MACD CROSS UP (Early Entry) | Price: " + str.tostring(close), alert.freq_once_per_bar)
+        alert("MACD CROSS UP (Early Entry) | Price: " + str.tostring(close), alert.freq_once_per_bar)
     if macd_sell_trigger and not sell_signal
-        alert("⚡ MACD CROSS DOWN (Early Entry) | Price: " + str.tostring(close), alert.freq_once_per_bar)
+        alert("MACD CROSS DOWN (Early Entry) | Price: " + str.tostring(close), alert.freq_once_per_bar)
