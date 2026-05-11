@@ -1,0 +1,189 @@
+//@version=6
+indicator("Deriv Trend Detector PRO (Clean)", overlay = true, max_labels_count = 500)
+
+// ==========================================
+// Inputs
+// ==========================================
+// Trend (Standard)
+ema20_len = input.int(20, "EMA 20 Length", minval = 1, group = "Trend Settings")
+ema50_len = input.int(50, "EMA 50 Length", minval = 1, group = "Trend Settings")
+
+// MTF Filter
+use_mtf = input.bool(true, "Use 4H Trend Filter?", group = "Trend Settings")
+htf_tf  = input.timeframe("240", "Higher Timeframe", group = "Trend Settings")
+
+// Signal Filtering (Noise Reduction)
+min_gap = input.int(5, "Min Bars Between Signals", minval = 1, group = "Noise Reduction")
+only_first = input.bool(true, "Only First Signal in Trend Direction", group = "Noise Reduction")
+aggressive_alerts = input.bool(false, "Alert on ALL MACD Crosses? (Less Accurate)", group = "Noise Reduction")
+
+// Momentum
+rsi_len = input.int(14, "RSI Length", minval = 1, group = "Momentum")
+rsi_buy_level = input.int(55, "RSI Buy Level", minval = 0, maxval = 100, group = "Momentum")
+rsi_sell_level = input.int(45, "RSI Sell Level", minval = 0, maxval = 100, group = "Momentum")
+
+// Volatility & Risk
+atr_len = input.int(14, "ATR Length", minval = 1, group = "Risk Management")
+atr_ma_len = input.int(20, "ATR MA Length", minval = 1, group = "Risk Management")
+sl_multiplier = input.float(1.5, "Stop Loss (ATR x)", minval = 0.1, step = 0.1, group = "Risk Management")
+tp_multiplier = input.float(3.0, "Take Profit (ATR x)", minval = 0.1, step = 0.1, group = "Risk Management")
+
+// Visual Settings
+show_sl_tp = input.bool(true, "Show SL/TP Lines", group = "Visuals")
+show_bg = input.bool(false, "Show Background Color", group = "Visuals")
+show_vlines = input.bool(true, "Show Vertical Signal Lines", group = "Visuals")
+check_tf = input.bool(true, "Show Timeframe Warning in Table?", group = "Visuals")
+
+// MACD
+macd_fast = input.int(12, "MACD Fast Length", minval = 1, group = "MACD")
+macd_slow = input.int(26, "MACD Slow Length", minval = 1, group = "MACD")
+macd_signal = input.int(9, "MACD Signal Length", minval = 1, group = "MACD")
+
+// ==========================================
+// Calculations
+// ==========================================
+// EMAs
+ema20 = ta.ema(close, ema20_len)
+ema50 = ta.ema(close, ema50_len)
+
+// HTF EMA (4H)
+htf_ema50 = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50), lookahead = barmerge.lookahead_on)
+
+// RSI
+rsi_val = ta.rsi(close, rsi_len)
+
+// ATR and ATR MA
+atr_val = ta.atr(atr_len)
+atr_ma = ta.sma(atr_val, atr_ma_len)
+
+// MACD
+[macd_line, signal_line, hist] = ta.macd(close, macd_fast, macd_slow, macd_signal)
+
+// ==========================================
+// Trend Detection Logic
+// ==========================================
+is_bullish_trend = close > ema20 and ema20 > ema50
+is_bearish_trend = close < ema20 and ema20 < ema50
+
+// MTF Logic
+htf_bullish = close > htf_ema50
+htf_bearish = close < htf_ema50
+mtf_filter_pass = not use_mtf or (is_bullish_trend ? htf_bullish : is_bearish_trend ? htf_bearish : false)
+
+is_rsi_buy = rsi_val > rsi_buy_level
+is_rsi_sell = rsi_val < rsi_sell_level
+is_volatile = atr_val > atr_ma
+
+// MACD Trigger
+macd_buy_trigger = ta.crossover(hist, 0)
+macd_sell_trigger = ta.crossunder(hist, 0)
+
+// Raw Signals (High Accuracy)
+buy_raw = is_bullish_trend and is_rsi_buy and macd_buy_trigger and is_volatile and mtf_filter_pass
+sell_raw = is_bearish_trend and is_rsi_sell and macd_sell_trigger and is_volatile and mtf_filter_pass
+
+// ==========================================
+// Signal Filtering
+// ==========================================
+var int last_signal_bar = 0
+var string last_signal_dir = "None"
+
+buy_signal = false
+sell_signal = false
+
+if buy_raw and (bar_index - last_signal_bar >= min_gap) and (not only_first or last_signal_dir != "BUY")
+    buy_signal := true
+    last_signal_bar := bar_index
+    last_signal_dir := "BUY"
+
+if sell_raw and (bar_index - last_signal_bar >= min_gap) and (not only_first or last_signal_dir != "SELL")
+    sell_signal := true
+    last_signal_bar := bar_index
+    last_signal_dir := "SELL"
+
+// Risk Levels
+var float sl_price = na
+var float tp_price = na
+
+if buy_signal
+    sl_price := low - (atr_val * sl_multiplier)
+    tp_price := close + (atr_val * tp_multiplier)
+
+if sell_signal
+    sl_price := high + (atr_val * sl_multiplier)
+    tp_price := close - (atr_val * tp_multiplier)
+
+// ==========================================
+// Visuals
+// ==========================================
+plot(ema20, color = color.new(color.blue, 50), title = "EMA 20")
+plot(ema50, color = color.new(color.orange, 50), title = "EMA 50")
+
+barcolor(is_bullish_trend ? color.new(color.green, 20) : is_bearish_trend ? color.new(color.red, 20) : color.new(color.gray, 50))
+
+if (buy_signal or (aggressive_alerts and macd_buy_trigger)) and show_vlines
+    line.new(bar_index, low, bar_index, high, xloc = xloc.bar_index, extend = extend.both, color = color.new(color.green, 70), style = line.style_dashed)
+
+if (sell_signal or (aggressive_alerts and macd_sell_trigger)) and show_vlines
+    line.new(bar_index, low, bar_index, high, xloc = xloc.bar_index, extend = extend.both, color = color.new(color.red, 70), style = line.style_dashed)
+
+bgcolor(show_bg ? (buy_signal ? color.new(color.green, 85) : sell_signal ? color.new(color.red, 85) : na) : na)
+
+if buy_signal
+    label.new(bar_index, low, "BUY\n" + str.tostring(close, "#.##"), style = label.style_label_up, color = color.green, textcolor = color.white, yloc = yloc.belowbar, size = size.small)
+
+if sell_signal
+    label.new(bar_index, high, "SELL\n" + str.tostring(close, "#.##"), style = label.style_label_down, color = color.red, textcolor = color.white, yloc = yloc.abovebar, size = size.small)
+
+plot(show_sl_tp and (buy_signal or sell_signal) ? sl_price : na, "Stop Loss", color = color.new(color.red, 30), style = plot.style_linebr, linewidth = 2)
+plot(show_sl_tp and (buy_signal or sell_signal) ? tp_price : na, "Take Profit", color = color.new(color.green, 30), style = plot.style_linebr, linewidth = 2)
+
+// ==========================================
+// Info Table
+// ==========================================
+var table info_table = table.new(position.top_right, 2, 8, bgcolor = color.new(color.black, 40), border_width = 1, border_color = color.gray)
+
+if barstate.islast
+    tf_match = (timeframe.isintraday and timeframe.multiplier == 60) or timeframe.period == "60"
+    
+    table.cell(info_table, 0, 0, "Metric", text_color = color.white)
+    table.cell(info_table, 1, 0, "Status", text_color = color.white)
+    
+    table.cell(info_table, 0, 1, "4H Trend", text_color = color.white)
+    table.cell(info_table, 1, 1, htf_bullish ? "BULLISH" : "BEARISH", text_color = htf_bullish ? color.green : color.red)
+
+    table.cell(info_table, 0, 2, "RSI (14)", text_color = color.white)
+    table.cell(info_table, 1, 2, str.tostring(rsi_val, "#.##"), text_color = rsi_val > 50 ? color.green : color.red)
+
+    table.cell(info_table, 0, 3, "Volatility", text_color = color.white)
+    table.cell(info_table, 1, 3, is_volatile ? "HIGH" : "LOW", text_color = is_volatile ? color.green : color.yellow)
+
+    table.cell(info_table, 0, 4, "Current Price", text_color = color.white)
+    table.cell(info_table, 1, 4, str.tostring(close, "#.##"), text_color = color.white)
+
+    if check_tf
+        table.cell(info_table, 0, 5, "Chart TF", text_color = color.white)
+        table.cell(info_table, 1, 5, tf_match ? "1H (OK)" : "WRONG TF", text_color = tf_match ? color.green : color.red)
+    
+    table.cell(info_table, 0, 6, "Alert Mode", text_color = color.white)
+    table.cell(info_table, 1, 6, aggressive_alerts ? "AGGRESSIVE" : "PRO (SAFE)", text_color = aggressive_alerts ? color.yellow : color.cyan)
+
+    table.cell(info_table, 0, 7, "Target TP", text_color = color.white)
+    table.cell(info_table, 1, 7, str.tostring(tp_price, "#.##"), text_color = color.green)
+
+// ==========================================
+// Alerts
+// ==========================================
+// 1. High Accuracy "PRO" Signals
+if buy_signal
+    alert("🚀 PRO BUY | Price: " + str.tostring(close) + " | SL: " + str.tostring(sl_price) + " | TP: " + str.tostring(tp_price), alert.freq_once_per_bar)
+
+if sell_signal
+    alert("🔥 PRO SELL | Price: " + str.tostring(close) + " | SL: " + str.tostring(sl_price) + " | TP: " + str.tostring(tp_price), alert.freq_once_per_bar)
+
+// 2. Aggressive Crossover Alerts (Independent of RSI/Trend)
+if aggressive_alerts
+    if macd_buy_trigger and not buy_signal
+        alert("⚡ MACD CROSS UP (Early Entry) | Price: " + str.tostring(close), alert.freq_once_per_bar)
+    if macd_sell_trigger and not sell_signal
+        alert("⚡ MACD CROSS DOWN (Early Entry) | Price: " + str.tostring(close), alert.freq_once_per_bar)
